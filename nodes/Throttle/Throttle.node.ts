@@ -12,7 +12,8 @@ export class Throttle implements INodeType {
 		group: ['transform'],
 		version: 1,
 		description: "Limits the frequence of execution of subsequent nodes. Useful for rate limiting.",
-		subtitle: '={{$parameter["interval"] + " " + $parameter["unit"]}}',
+		// show amount of executions per interval in node subtitle
+		subtitle: '={{ ($parameter["executions"] == 1 )? "" : $parameter["executions"] + " executions per " }}{{ $parameter["interval"] + " " + $parameter["unit"] }}',
 		defaults: {
 			name: 'Throttle',
 		},
@@ -21,12 +22,23 @@ export class Throttle implements INodeType {
 		outputs: ['main', 'main'],
 		outputNames: outputNames,
 		properties: [
-			// show note that this node will not work when triggered manyally
+			// show note that this node will not work when triggered manually
 			{
 				displayName: 'This node will not work when workflow is triggered manually.\nIt will only throttle executions when triggered by a webhook, timer or other trigger',
-				name: 'warning',
+				name: 'warningManualTrigger',
 				type: 'notice',
 				default: '',
+			},
+			// show warning that this node will not work for concurrent executions
+			{
+				displayName: '<b>WARNING: </b> This node will not work properly for concurrent executions. It will only throttle sequential executions. It is recommended to set N8N <a href="https://docs.n8n.io/hosting/scaling/execution-modes-processes/" target="_blank">EXECUTIONS_PROCESS mode</a> to "main", so all executions will be sequential.',
+				name: 'warningConcurrentExecutions',
+				type: 'notice',
+				default: '',
+				displayOptions: {
+					show: {
+					},
+				}
 			},
 			// interval between executions
 			{
@@ -61,6 +73,14 @@ export class Throttle implements INodeType {
 					},
 				],
 			},
+			// executions allowed per specified interval
+			{
+				displayName: 'Executions per Interval',
+				name: 'executions',
+				type: 'number',
+				default: 1,
+				description: 'Number of executions allowed per specified interval',
+			},
 		],
 	};
 
@@ -70,6 +90,19 @@ export class Throttle implements INodeType {
 		// check node static variable for last execution time
 		const nodeStaticData = this.getWorkflowStaticData('node');
 		const lastExecution = nodeStaticData.lastExecution as number || 0;
+		const executionsAmount = nodeStaticData.executionsAmount as number || 0;
+
+		// check if executions amount is not reached yet
+		const allowedExecutions = this.getNodeParameter('executions', 0) as number;
+		const executionsLimitNotReached = executionsAmount < allowedExecutions;
+
+		if (executionsLimitNotReached) {
+			// update executions amount
+			nodeStaticData.executionsAmount = executionsAmount + 1;
+
+			// send items to allowed output
+			return this.prepareOutputData(items, allowedOutputIndex);
+		}
 
 		// calculate next allowed execution time
 		const interval = this.getNodeParameter('interval', 0) as number;
@@ -95,6 +128,8 @@ export class Throttle implements INodeType {
 		const executonAllowed = currentTime >= nextExecution;
 
 		if (executonAllowed) {
+			// reset executions amount
+			nodeStaticData.executionsAmount = 1;
 			// update last execution time
 			nodeStaticData.lastExecution = currentTime;
 
