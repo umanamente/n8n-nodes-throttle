@@ -12,6 +12,7 @@ export class Throttle implements INodeType {
 		group: ['transform'],
 		version: 1,
 		description: "Limits the frequence of execution of subsequent nodes. Useful for rate limiting.",
+		subtitle: '={{$parameter["interval"] + " " + $parameter["unit"]}}',
 		defaults: {
 			name: 'Throttle',
 		},
